@@ -300,19 +300,20 @@ void joystick::update(const tagRAWINPUT *input)
 				             0;
 		} else {
 			// Cast to signed and rescale to [-1.0, 1.0]
-			auto position = (float)((signed)(value));
-			position -= val_cap.LogicalMin;
-			position /= (val_cap.LogicalMax - val_cap.LogicalMin);
-			position = (position - .5F) * 2.F;
-
-			if (fabs(position) < device->deadzone)
+			double position = (double)(value);
+			if (position == 0.0f) position = 0.0;
+			else if (position >= 32769.f) position = -1.0;
+			else if (position <= 32767.f) position = 1.0;
+			
+				
+			if (fabs(position) <= device->deadzone)
 				continue;
 
 			const auto axis = device->axis_map[i];
 			if (axis == axis::up_down)
-				*buttons |= position > 0 ? mask_down : mask_up;
+				*buttons |= position > 0.F ? mask_down : mask_up;
 			else if (axis == axis::left_right)
-				*buttons |= position > 0 ? mask_right : mask_left;
+				*buttons |= position > 0.F ? mask_right : mask_left;
 		}
 	}
 
