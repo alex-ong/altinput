@@ -95,7 +95,7 @@ void joystick::get_device_info(
 		std::string prefix = "joystick";
 
 
-	new_device->player = cfg.value_int(0, prefix.str() + ".player");
+		//new_device->player = cfg.value_int(0, prefix + ".player");
 		new_device->player = 1; //hack
 
 		// Make sure this is actually going to be used for a player
