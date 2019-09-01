@@ -8,16 +8,16 @@ struct tagRAWINPUT;
 class base_input {
 protected:
 	// Game button bitmasks
-	static constexpr auto mask_up = 32;
-	static constexpr auto mask_down = 16;
-	static constexpr auto mask_left = 8;
-	static constexpr auto mask_right = 4;
+	static const int mask_up = 32;
+	static const int mask_down = 16;
+	static const int mask_left = 8;
+	static const int mask_right = 4;
 
-	static constexpr auto mask_A = 2;
-	static constexpr auto mask_B = 1;
-	static constexpr auto mask_C = 32768;
-	static constexpr auto mask_D = 16384;
-	static constexpr auto mask_start = 128;
+	static const int mask_A = 2;
+	static const int mask_B = 1;
+	static const int mask_C = 32768;
+	static const int mask_D = 16384;
+	static const int mask_start = 128;
 
 public:
 	// Usage for raw input device

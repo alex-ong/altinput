@@ -163,7 +163,7 @@ void hook_position_window(const char fullscreen)
 		return m1.r.left < m2.r.left;
 	});
 
-	auto idx = cfg.value_int(0, "patches.monitor");
+	int idx = cfg.value_int(0, "patches.monitor");
 	if (idx >= monitors.size())
 		idx = 0;
 
@@ -273,7 +273,7 @@ BOOL WINAPI DllMain(
 		return false;
 
 	// Patch in JMP rel32 to custom WinMain
-	constexpr uintptr_t WinMain = 0x42ED40;
+	const uintptr_t WinMain = 0x42ED40;
 
 	DWORD old_protect;
 	VirtualProtect((void*)(WinMain), 5, PAGE_READWRITE, &old_protect);

@@ -40,8 +40,14 @@ static void apply_patches(const HANDLE process)
 	const auto resolution_x = cfg.value_int(640, "patches.resolution_x");
 	const auto resolution_y = cfg.value_int(480, "patches.resolution_y");
 
-	const auto fullscreen = (char)(cfg.value_bool(true, "patches.fullscreen"));
-	patch_extern(0x44DCC9, &fullscreen, sizeof(fullscreen));
+
+	if (!cfg.value_bool(true, "patches.fullscreen"))
+	{
+		const auto zero = '\0';
+		std::cout << "fullscreen off?" << "\n";
+		patch_extern(0x44DCC9, &zero, sizeof(zero));
+	}	
+
 	patch_extern(0x40D160, &resolution_y, sizeof(resolution_y));
 	patch_extern(0x40D165, &resolution_x, sizeof(resolution_x));
 
@@ -105,12 +111,6 @@ static void apply_patches(const HANDLE process)
 	if (cfg.value_bool(true, "patches.gl_nearest")) {
 		const auto GL_NEAREST = 0x2600;
 		patch_extern(0x43DC95, &GL_NEAREST, sizeof(GL_NEAREST));
-	}
-
-	// patch the value passed to sub_450E50
-	if (cfg.value_bool(false, "patches.windowed")) {
-		const auto zero = '\0';
-		patch_extern(0x44DCC9, &zero, sizeof(zero));
 	}
 
 	// patch the base sramdata directory to null

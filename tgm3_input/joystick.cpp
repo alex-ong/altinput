@@ -8,6 +8,7 @@
 #include <Windows.h>
 #include <subauth.h>
 #include <hidsdi.h>
+#include <iostream>
 
 /**
  * init - Initialize an input device from a config
@@ -28,6 +29,7 @@ void joystick::init(const config &cfg)
 	GetRawInputDeviceList(nullptr, &num_devices, sizeof(RAWINPUTDEVICELIST));
 
 	auto device_list = std::make_unique<RAWINPUTDEVICELIST[]>(num_devices);
+
 	GetRawInputDeviceList(device_list.get(), &num_devices, sizeof(RAWINPUTDEVICELIST));
 
 	for (auto i = 0u; i < num_devices; i++) {
@@ -81,135 +83,138 @@ void joystick::get_device_info(
 	wchar_t name[128];
 	if (!HidD_GetProductString(nt_handle, name, sizeof(name)))
 		return;
+	
+	try {
+		// Append a number if this is a duplicate
+		auto duplicate_num = 0;
+		for (const auto &check_device : devices) {
+			if (wcscmp(name, check_device->name) == 0)
+				duplicate_num++;
+		}
 
-	// Append a number if this is a duplicate
-	auto duplicate_num = 0;
-	for (const auto &check_device : devices) {
-		if (wcscmp(name, check_device->name) == 0)
-			duplicate_num++;
-	}
+		std::string prefix = "joystick";
 
-	std::stringstream prefix;
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-	prefix << "joystick." << converter.to_bytes(name);
-	if (duplicate_num > 0)
-		prefix << " " << (duplicate_num + 1);
 
 	new_device->player = cfg.value_int(0, prefix.str() + ".player");
+		new_device->player = 1; //hack
 
-	// Make sure this is actually going to be used for a player
-	if (new_device->player != 1 && new_device->player != 2)
-		return;
+		// Make sure this is actually going to be used for a player
+		if (new_device->player != 1 && new_device->player != 2)
+			return;
 
-	_HIDP_PREPARSED_DATA *dev_info;
-	if (!HidD_GetPreparsedData(nt_handle, &dev_info))
-		return;
+		_HIDP_PREPARSED_DATA *dev_info;
+		if (!HidD_GetPreparsedData(nt_handle, &dev_info))
+			return;
 
-	// Get device capabilities
-	HIDP_CAPS caps;
-	if (!NT_SUCCESS(HidP_GetCaps(dev_info, &caps))) {
+		// Get device capabilities
+		HIDP_CAPS caps;
+		if (!NT_SUCCESS(HidP_GetCaps(dev_info, &caps))) {
+			HidD_FreePreparsedData(dev_info);
+			return;
+		}
+
+		// Get button capabilities
+		auto num_button_caps = caps.NumberInputButtonCaps;
+		auto button_caps = std::make_unique<HIDP_BUTTON_CAPS[]>(
+			num_button_caps);
+
+		if (!NT_SUCCESS(HidP_GetButtonCaps(
+			HidP_Input,
+			button_caps.get(),
+			&num_button_caps,
+			dev_info))
+			) {
+			HidD_FreePreparsedData(dev_info);
+			return;
+		}
+
+		// Get value capabilities
+		new_device->num_value_caps = caps.NumberInputValueCaps;
+		new_device->value_caps = std::make_unique<HIDP_VALUE_CAPS[]>(
+			new_device->num_value_caps);
+
+		if (!NT_SUCCESS(HidP_GetValueCaps(
+			HidP_Input,
+			new_device->value_caps.get(),
+			&new_device->num_value_caps,
+			dev_info))
+			) {
+			HidD_FreePreparsedData(dev_info);
+			return;
+		}
+
+		new_device->nt_handle = nt_handle;
+		new_device->ri_handle = ri_handle;;
+		wcscpy_s(new_device->name, name);
+		new_device->num_buttons = (ULONG)(
+			button_caps[0].Range.UsageMax -
+			button_caps[0].Range.UsageMin + 1);
+		new_device->button_usage_page = button_caps[0].UsagePage;
+		new_device->lowest_button_id = button_caps[0].Range.UsageMin;
+
+		new_device->deadzone = cfg.value_float(.5F, prefix + ".deadzone");
+
+		// Axes
+		const auto up_down = cfg.value_int(-1, prefix + ".up_down");
+		const auto left_right = cfg.value_int(-1, prefix + ".left_right");
+
+		new_device->axis_map = std::make_unique<axis[]>(new_device->num_value_caps);
+		for (auto i = 0; i < new_device->num_value_caps; i++)
+			new_device->axis_map[i] = axis::none;
+
+		const auto write_axis_checked = [&](const int idx, const axis axis)
+		{
+			if (idx >= 0 && idx < new_device->num_value_caps)
+				new_device->axis_map[idx] = axis;
+		};
+
+		write_axis_checked(up_down, axis::up_down);
+		write_axis_checked(left_right, axis::left_right);
+
+		// Buttons
+		const int up = cfg.value_int(-1, prefix + ".up");
+		const int down = cfg.value_int(-1, prefix + ".down");
+		const int left = cfg.value_int(-1, prefix + ".left");
+		const int right = cfg.value_int(-1, prefix + ".right");
+
+		const int A = cfg.value_int(1, prefix + ".A");
+		const int B = cfg.value_int(2, prefix + ".B");
+		const int C = cfg.value_int(3, prefix + ".C");
+		const int D = cfg.value_int(0, prefix + ".D");
+
+		const auto start = cfg.value_int(7, prefix + ".start");
+
+		new_device->button_mask_map = std::make_unique<unsigned short[]>(
+			new_device->num_buttons);
+
+		for (auto i = 0; i < new_device->num_buttons; i++)
+			new_device->button_mask_map[i] = 0;
+
+		const auto write_button_checked = [&](const int idx, const int mask)
+		{
+			if (idx >= 0 && idx < new_device->num_buttons)
+				new_device->button_mask_map[idx] = mask;
+		};
+
+		write_button_checked(up, mask_up);
+		write_button_checked(down, mask_down);
+		write_button_checked(left, mask_left);
+		write_button_checked(right, mask_right);
+
+		write_button_checked(A, mask_A);
+		write_button_checked(B, mask_B);
+		write_button_checked(C, mask_C);
+		write_button_checked(D, mask_D);
+
+		write_button_checked(start, mask_start);
+
+		devices.push_back(std::move(new_device));
+
 		HidD_FreePreparsedData(dev_info);
-		return;
+	} catch (...) {
+		//lol...	
 	}
 
-	// Get button capabilities
-	auto num_button_caps = caps.NumberInputButtonCaps;
-	auto button_caps = std::make_unique<HIDP_BUTTON_CAPS[]>(
-		num_button_caps);
-
-	if (!NT_SUCCESS(HidP_GetButtonCaps(
-		HidP_Input,
-		button_caps.get(),
-		&num_button_caps,
-		dev_info))
-	) {
-		HidD_FreePreparsedData(dev_info);
-		return;
-	}
-
-	// Get value capabilities
-	new_device->num_value_caps = caps.NumberInputValueCaps;
-	new_device->value_caps = std::make_unique<HIDP_VALUE_CAPS[]>(
-		new_device->num_value_caps);
-
-	if (!NT_SUCCESS(HidP_GetValueCaps(
-		HidP_Input,
-		new_device->value_caps.get(),
-		&new_device->num_value_caps,
-		dev_info))
-	) {
-		HidD_FreePreparsedData(dev_info);
-		return;
-	}
-
-	new_device->nt_handle = nt_handle;
-	new_device->ri_handle = ri_handle;;
-	wcscpy_s(new_device->name, name);
-	new_device->num_buttons = (ULONG)(
-		button_caps[0].Range.UsageMax -
-		button_caps[0].Range.UsageMin + 1);
-	new_device->button_usage_page = button_caps[0].UsagePage;
-	new_device->lowest_button_id = button_caps[0].Range.UsageMin;
-
-	new_device->deadzone  = cfg.value_float(.5F, prefix.str() + ".deadzone");
-
-	// Axes
-	const auto up_down    = cfg.value_int(-1, prefix.str() + ".up_down");
-	const auto left_right = cfg.value_int(-1, prefix.str() + ".left_right");
-
-	new_device->axis_map = std::make_unique<axis[]>(new_device->num_value_caps);
-	for (auto i = 0; i < new_device->num_value_caps; i++)
-		new_device->axis_map[i] = axis::none;
-
-	const auto write_axis_checked = [&](const int idx, const axis axis)
-	{
-		if (idx >= 0 && idx < new_device->num_value_caps)
-			new_device->axis_map[idx] = axis;
-	};
-
-	write_axis_checked(up_down, axis::up_down);
-	write_axis_checked(left_right, axis::left_right);
-
-	// Buttons
-	const auto up         = cfg.value_int(-1, prefix.str() + ".up");
-	const auto down       = cfg.value_int(-1, prefix.str() + ".down");
-	const auto left       = cfg.value_int(-1, prefix.str() + ".left");
-	const auto right      = cfg.value_int(-1, prefix.str() + ".right");
-
-	const auto A          = cfg.value_int(1, prefix.str() + ".A");
-	const auto B          = cfg.value_int(2, prefix.str() + ".B");
-	const auto C          = cfg.value_int(3, prefix.str() + ".C");
-	const auto D          = cfg.value_int(0, prefix.str() + ".D");
-
-	const auto start      = cfg.value_int(7, prefix.str() + ".start");
-
-	new_device->button_mask_map = std::make_unique<unsigned short[]>(
-		new_device->num_buttons);
-
-	for (auto i = 0; i < new_device->num_buttons; i++)
-		new_device->button_mask_map[i] = 0;
-
-	const auto write_button_checked = [&](const int idx, const int mask)
-	{
-		if (idx >= 0 && idx < new_device->num_buttons)
-			new_device->button_mask_map[idx] = mask;
-	};
-
-	write_button_checked(up, mask_up);
-	write_button_checked(down, mask_down);
-	write_button_checked(left, mask_left);
-	write_button_checked(right, mask_right);
-
-	write_button_checked(A, mask_A);
-	write_button_checked(B, mask_B);
-	write_button_checked(C, mask_C);
-	write_button_checked(D, mask_D);
-
-	write_button_checked(start, mask_start);
-
-	devices.push_back(std::move(new_device));
-
-	HidD_FreePreparsedData(dev_info);
 }
 
 /**

@@ -1,0 +1,6 @@
+/demo_dump/
+/tgm3_input/Debug
+/tgm3_input/Release
+*.log
+/tgm3_input.sdf
+/tgm3_input.v12.suo
